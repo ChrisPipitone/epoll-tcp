@@ -8,6 +8,8 @@ services:
     volumes:
       - .:/app
     command: /app/build/server
+    ports:
+      - "8080:8080"
   client:
     image: epoll-tcp:dev
     build:
