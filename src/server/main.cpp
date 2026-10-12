@@ -1,3 +1,4 @@
+#include "common/Fd.h"
 #include <cstring>
 #include <iostream>
 #include <netdb.h>
@@ -6,12 +7,12 @@
 #include <sys/socket.h>
 #include <unistd.h>
 
-int get_listener_socket() {
+Fd get_listener_socket() {
   constexpr const char* PORT = "8080";
   addrinfo hints{};
   addrinfo* ai = nullptr;
-  addrinfo* p = nullptr;
   int yes = 1;
+  int last_err = 0;
 
   // Get us a socket and bind it
   hints.ai_family = AF_INET;
@@ -20,66 +21,58 @@ int get_listener_socket() {
 
   int result = getaddrinfo(nullptr, PORT, &hints, &ai);
   if (result != 0) {
-    const auto* err = gai_strerror(result);
-    std::cerr << "server: %s\n" << err << "\n";
-    throw std::runtime_error(err);
+    throw std::runtime_error(gai_strerror(result));
   }
 
-  int listen_fd = -1;
-  for (p = ai; p != nullptr; p = p->ai_next) {
-    listen_fd = socket(p->ai_family, p->ai_socktype, p->ai_protocol);
-    if (listen_fd < 0) {
+  for (auto p = ai; p != nullptr; p = p->ai_next) {
+    Fd listen_fd(socket(p->ai_family, p->ai_socktype, p->ai_protocol));
+    if (listen_fd.get() < 0) {
+      last_err = errno;
       continue;
     }
 
     // Lose the pesky "address already in use" error message
-    setsockopt(listen_fd, SOL_SOCKET, SO_REUSEADDR, &yes, sizeof(yes));
+    if (setsockopt(listen_fd.get(), SOL_SOCKET, SO_REUSEADDR, &yes,
+                   sizeof(yes)) < 0) {
+      std::cerr << "warn: SO_REUSEADDR: " << std::strerror(errno) << "\n";
+    }
 
-    if (bind(listen_fd, p->ai_addr, p->ai_addrlen) < 0) {
-      close(listen_fd);
+    if (bind(listen_fd.get(), p->ai_addr, p->ai_addrlen) < 0) {
+      last_err = errno;
       continue;
     }
-    break;
+
+    if (listen(listen_fd.get(), 10) == -1) { // ik ik
+      last_err = errno;
+      freeaddrinfo(ai);
+      throw std::system_error(last_err, std::generic_category(), "listen");
+    } else {
+      freeaddrinfo(ai);
+      return listen_fd;
+    }
   }
 
-  // If we got here, it means we didn't get bound
-  if (p == nullptr) {
-    return -1;
-  }
-
-  freeaddrinfo(ai); // All done with this
-
-  // Listen
-  if (listen(listen_fd, 10) == -1) {
-    return -1;
-  }
-
-  return listen_fd;
+  freeaddrinfo(ai);
+  throw std::system_error(last_err, std::generic_category(), "bind");
 }
 
 int main() {
   try {
-    int listener = get_listener_socket();
+    Fd listener = get_listener_socket();
 
-    if (listener == -1) {
-      fprintf(stderr, "error getting listening socket\n");
-      return 1;
+    while (true) {
+      // accepting connection request
+      Fd clientSocket(accept(listener.get(), nullptr, nullptr));
+      if (clientSocket.get() == -1) {
+        if (errno == EINTR || errno == ECONNABORTED) continue;
+        throw std::system_error(errno, std::generic_category(), "accept");
+      }
+
+      // recieving data
+      char buffer[1024] = {0};
+      ssize_t n = recv(clientSocket.get(), buffer, sizeof(buffer), 0);
+      if (n > 0) std::cout.write(buffer, n);
     }
-
-    // accepting connection request
-    int clientSocket = accept(listener, nullptr, nullptr);
-    if (clientSocket == -1) {
-      fprintf(stderr, "error accepting client socket\n");
-      return 1;
-    }
-
-    // recieving data
-    char buffer[1024] = {0};
-    ssize_t n = recv(clientSocket, buffer, sizeof(buffer), 0);
-    if (n > 0) std::cout.write(buffer, n);
-
-    // closing the socket.
-    close(listener);
 
   } catch (const std::exception& e) {
     std::cerr << "fatal: " << e.what() << "\n";
