@@ -1,11 +1,11 @@
 #include "common/AddrInfo.h"
 #include "common/Fd.h"
+#include <cerrno>
 #include <cstring>
 #include <iostream>
 #include <netdb.h>
-#include <netinet/in.h>
 #include <sys/socket.h>
-#include <unistd.h>
+#include <system_error>
 
 Fd get_listener_socket() {
   constexpr const char* PORT = "8080";
