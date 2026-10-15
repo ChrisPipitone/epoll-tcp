@@ -1,30 +1,26 @@
+#include "common/AddrInfo.h"
 #include "common/Fd.h"
 #include <cstring>
 #include <iostream>
 #include <netdb.h>
 #include <netinet/in.h>
-#include <stdexcept>
 #include <sys/socket.h>
 #include <unistd.h>
 
 Fd get_listener_socket() {
   constexpr const char* PORT = "8080";
   addrinfo hints{};
-  addrinfo* ai = nullptr;
   int yes = 1;
   int last_err = 0;
 
   // Get us a socket and bind it
-  hints.ai_family = AF_INET;
+  hints.ai_family = AF_UNSPEC;
   hints.ai_socktype = SOCK_STREAM;
   hints.ai_flags = AI_PASSIVE;
 
-  int result = getaddrinfo(nullptr, PORT, &hints, &ai);
-  if (result != 0) {
-    throw std::runtime_error(gai_strerror(result));
-  }
+  auto addrInfo = resolve(nullptr, PORT, hints);
 
-  for (auto p = ai; p != nullptr; p = p->ai_next) {
+  for (auto* p = addrInfo.get(); p != nullptr; p = p->ai_next) {
     Fd listen_fd(socket(p->ai_family, p->ai_socktype, p->ai_protocol));
     if (listen_fd.get() < 0) {
       last_err = errno;
@@ -42,17 +38,13 @@ Fd get_listener_socket() {
       continue;
     }
 
-    if (listen(listen_fd.get(), 10) == -1) { // ik ik
+    if (listen(listen_fd.get(), 10) == -1) {
       last_err = errno;
-      freeaddrinfo(ai);
       throw std::system_error(last_err, std::generic_category(), "listen");
     } else {
-      freeaddrinfo(ai);
       return listen_fd;
     }
   }
-
-  freeaddrinfo(ai);
   throw std::system_error(last_err, std::generic_category(), "bind");
 }
 
