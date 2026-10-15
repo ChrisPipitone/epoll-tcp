@@ -23,6 +23,7 @@ add_executable(client
   src/client/main.cpp
 )
 target_include_directories(server PRIVATE src)
+target_include_directories(client PRIVATE src)
 
 # Server
 target_compile_options(server PRIVATE -Wall -Wextra -Wpedantic -Werror)
