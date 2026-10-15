@@ -8,7 +8,7 @@
 #include <system_error>
 
 Fd get_listener_socket() {
-  constexpr const char* PORT = "8080";
+  constexpr const char* kPort = "8080";
   addrinfo hints{};
   int yes = 1;
   int last_err = 0;
@@ -18,9 +18,9 @@ Fd get_listener_socket() {
   hints.ai_socktype = SOCK_STREAM;
   hints.ai_flags = AI_PASSIVE;
 
-  auto addrInfo = resolve(nullptr, PORT, hints);
+  auto addr_info = resolve(nullptr, kPort, hints);
 
-  for (auto* p = addrInfo.get(); p != nullptr; p = p->ai_next) {
+  for (auto* p = addr_info.get(); p != nullptr; p = p->ai_next) {
     Fd listen_fd(socket(p->ai_family, p->ai_socktype, p->ai_protocol));
     if (listen_fd.get() < 0) {
       last_err = errno;
@@ -37,13 +37,13 @@ Fd get_listener_socket() {
       last_err = errno;
       continue;
     }
-
+    // SOMAXCONN prob later, idk what so see how capping would affect things
+    // later
     if (listen(listen_fd.get(), 10) == -1) {
       last_err = errno;
       throw std::system_error(last_err, std::generic_category(), "listen");
-    } else {
-      return listen_fd;
     }
+    return listen_fd;
   }
   throw std::system_error(last_err, std::generic_category(), "bind");
 }
@@ -54,15 +54,15 @@ int main() {
 
     while (true) {
       // accepting connection request
-      Fd clientSocket(accept(listener.get(), nullptr, nullptr));
-      if (clientSocket.get() == -1) {
+      Fd client_fd(accept(listener.get(), nullptr, nullptr));
+      if (client_fd.get() == -1) {
         if (errno == EINTR || errno == ECONNABORTED) continue;
         throw std::system_error(errno, std::generic_category(), "accept");
       }
 
       // recieving data
       char buffer[1024] = {0};
-      ssize_t n = recv(clientSocket.get(), buffer, sizeof(buffer), 0);
+      ssize_t n = recv(client_fd.get(), buffer, sizeof(buffer), 0);
       if (n > 0) std::cout.write(buffer, n);
     }
 
