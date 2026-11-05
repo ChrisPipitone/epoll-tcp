@@ -2,21 +2,25 @@ name: epoll-tcp
 services:
   server:
     image: epoll-tcp:dev
+    hostname: epoll-tcp-server
     build:
       context: .
       target: dev
     volumes:
       - .:/app
+      - ~/.dotfiles/docker/.bashrc:/root/.bashrc:ro
     command: /app/build/server
     ports:
       - "8080:8080"
   client:
     image: epoll-tcp:dev
+    hostname: epoll-tcp-client
     build:
       context: .
       target: dev
     volumes:
       - .:/app
+      - ~/.dotfiles/docker/.bashrc:/root/.bashrc:ro
     command: /app/build/client
     profiles:
       - test
